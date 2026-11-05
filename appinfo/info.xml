@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	  xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+	<id>leiterrunde_finanzen</id>
+	<name>Finances</name>
+	<name lang="de">Finanzen</name>
+	<summary>Accounts, payments and expenses for the leader team</summary>
+	<summary lang="de">Konten, Zahlungen und Auslagen für die Leiterrunde</summary>
+	<licence>agpl</licence>
+	<author>Leiterrunde</author>
+	<version>2.0.0</version>
+	<namespace>LeiterrundeFinanzen</namespace>
+	<category>organization</category>
+	<bugs>https://github.com/ollimaz/leiterrunde_finanzen/issues</bugs>
+	<repository>https://github.com/ollimaz/leiterrunde_finanzen</repository>
+	<dependencies>
+		<nextcloud min-version="29" max-version="36"/>
+	</dependencies>
+	<navigations>
+		<navigation>
+			<name>Finances</name>
+			<route>leiterrunde_finanzen.page.index</route>
+			<icon>leiterrunde_finanzen.svg</icon>
+		</navigation>
+	</navigations>
+	<background-jobs>
+		<job>OCA\LeiterrundeFinanzen\BackgroundJob\ObligationCheckJob</job>
+		<job>OCA\LeiterrundeFinanzen\BackgroundJob\ImapPollJob</job>
+	</background-jobs>
+	<repair-steps>
+		<install>
+			<step>OCA\LeiterrundeFinanzen\Migration\MigrateConfig</step>
+		</install>
+		<post-migration>
+			<step>OCA\LeiterrundeFinanzen\Migration\MigrateConfig</step>
+		</post-migration>
+	</repair-steps>
+	<settings>
+		<admin>OCA\LeiterrundeFinanzen\Settings\FinanzenPage</admin>
+	</settings>
+</info>
