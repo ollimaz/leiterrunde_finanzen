@@ -148,12 +148,7 @@ class ExpensesController extends ApiController {
 	): JSONResponse {
 		return $this->wrap(function () use ($id, $expense_date, $amount, $category, $description) {
 			$e = $this->mapper->find($id);
-			$own = $this->perm->currentPerson();
-			$isOwn = $own !== null && $own->getId() === $e->getPersonId()
-				&& $e->getSubmittedBy() === $this->perm->requireLoggedIn()->getUID();
-			if (!$isOwn || $e->getStatus() !== 'pending') {
-				$this->perm->require('expenses.decide');
-			}
+			$this->perm->assertRecordMutation($e->getPersonId(), $e->getSubmittedBy(), $e->getStatus(), 'expenses.decide');
 			$before = $e->jsonSerialize();
 			if ($expense_date !== null) {
 				$d = \DateTimeImmutable::createFromFormat('!Y-m-d', $expense_date);
@@ -230,12 +225,7 @@ class ExpensesController extends ApiController {
 	public function destroy(int $id): JSONResponse {
 		return $this->wrap(function () use ($id) {
 			$e = $this->mapper->find($id);
-			$own = $this->perm->currentPerson();
-			$isOwn = $own !== null && $own->getId() === $e->getPersonId()
-				&& $e->getSubmittedBy() === $this->perm->requireLoggedIn()->getUID();
-			if (!$isOwn || $e->getStatus() !== 'pending') {
-				$this->perm->require('expenses.decide');
-			}
+			$this->perm->assertRecordMutation($e->getPersonId(), $e->getSubmittedBy(), $e->getStatus(), 'expenses.decide');
 			$this->mapper->delete($e);
 			$this->audit->diff('expense', $id, null, ['_action' => 'deleted']);
 			return ['ok' => true];
@@ -264,24 +254,11 @@ class ExpensesController extends ApiController {
 	}
 
 	private function docVars(int $personId): array {
-		$person = null;
-		try { $person = $this->personMapper->find($personId); } catch (\Throwable) {}
-		$now = new \DateTimeImmutable();
-		return [
-			'jahr' => $now->format('Y'), 'monat' => $now->format('m'), 'datum' => $now->format('Y-m-d'),
-			'vorname' => $person?->getFirstName() ?? '', 'nachname' => $person?->getLastName() ?? '',
-			'id' => (string)$personId, 'kategorie' => (string)($this->request->getParam('category') ?? ''),
-		];
+		return $this->files->personVars($this->personMapper, $personId)
+			+ ['kategorie' => (string)($this->request->getParam('category') ?? '')];
 	}
 
 	private function assertCanView(Expense $e): void {
-		if ($this->perm->has('expenses.readAll')) {
-			return;
-		}
-		$own = $this->perm->currentPerson();
-		if ($own !== null && $own->getId() === $e->getPersonId()) {
-			return;
-		}
-		throw new \OCA\Leiterrunde\Exception\ForbiddenException();
+		$this->perm->assertRecordView($e->getPersonId(), 'expenses.readAll');
 	}
 }
