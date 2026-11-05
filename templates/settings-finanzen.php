@@ -1,5 +1,10 @@
 <?php
 declare(strict_types=1);
+/**
+ * SPDX-FileCopyrightText: 2026 Leiterrunde
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 \OCP\Util::addStyle('leiterrunde', 'leiterrunde');
 \OCP\Util::addScript('leiterrunde_finanzen', 'settings');
 ?>

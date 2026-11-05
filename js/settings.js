@@ -1,3 +1,7 @@
+/* SPDX-FileCopyrightText: 2026 Leiterrunde
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 (function(){
 const t = (s, v) => window.t('leiterrunde_finanzen', s, v, undefined, { escape: false, sanitize: false });
 (async () => {
