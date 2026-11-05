@@ -109,4 +109,14 @@ class TransactionsController extends ApiController {
 			return $tx->jsonSerialize();
 		});
 	}
+
+	#[NoAdminRequired]
+	public function destroy(int $id): JSONResponse {
+		return $this->wrap(function () use ($id) {
+			$this->perm->require('finance.write');
+			$this->mapper->delete($this->mapper->find($id));
+			$this->audit->diff('transaction', $id, null, ['_action' => 'deleted']);
+			return ['ok' => true];
+		});
+	}
 }

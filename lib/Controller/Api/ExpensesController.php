@@ -139,6 +139,48 @@ class ExpensesController extends ApiController {
 	}
 
 	#[NoAdminRequired]
+	public function update(
+		int $id,
+		?string $expense_date = null,
+		?float $amount = null,
+		?string $category = null,
+		?string $description = null,
+	): JSONResponse {
+		return $this->wrap(function () use ($id, $expense_date, $amount, $category, $description) {
+			$e = $this->mapper->find($id);
+			$own = $this->perm->currentPerson();
+			$isOwn = $own !== null && $own->getId() === $e->getPersonId()
+				&& $e->getSubmittedBy() === $this->perm->requireLoggedIn()->getUID();
+			if (!$isOwn || $e->getStatus() !== 'pending') {
+				$this->perm->require('expenses.decide');
+			}
+			$before = $e->jsonSerialize();
+			if ($expense_date !== null) {
+				$d = \DateTimeImmutable::createFromFormat('!Y-m-d', $expense_date);
+				if ($d === false) {
+					throw new ApiException('Invalid date (YYYY-MM-DD)', 422);
+				}
+				$e->setExpenseDate($d->format('Y-m-d'));
+			}
+			if ($amount !== null) {
+				if ($amount <= 0) {
+					throw new ApiException('Invalid amount', 422);
+				}
+				$e->setAmount(number_format($amount, 2, '.', ''));
+			}
+			if ($category !== null) {
+				$e->setCategory($category);
+			}
+			if ($description !== null) {
+				$e->setDescription($description);
+			}
+			$e = $this->mapper->update($e);
+			$this->audit->diff('expense', $e->getId(), $before, $e->jsonSerialize());
+			return $e->jsonSerialize();
+		});
+	}
+
+	#[NoAdminRequired]
 	public function approve(int $id, ?string $decision_note = null): JSONResponse {
 		return $this->decide($id, 'approved', $decision_note);
 	}

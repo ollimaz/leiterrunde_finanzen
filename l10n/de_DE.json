@@ -113,8 +113,23 @@
         "{imported} imported, {duplicates} duplicates, {matched} assigned": "{imported} importiert, {duplicates} Duplikate, {matched} zugeordnet",
         "{fetched} mails: {imported} imported": "{fetched} Mails: {imported} importiert",
         "yes": "ja",
-        "Import CSV": "CSV importieren",
-        "CSV export": "CSV-Export"
+        "Cancel": "Abbrechen",
+        "Delete": "Löschen",
+        "Delete bank account \"{name}\"?": "Bankkonto „{name}“ löschen?",
+        "Delete payment \"{label}\"?": "Zahlung „{label}“ löschen?",
+        "Delete this expense?": "Diese Auslage löschen?",
+        "Delete this transaction?": "Diesen Umsatz löschen?",
+        "Deleted": "Gelöscht",
+        "Edit": "Bearbeiten",
+        "Edit bank account": "Bankkonto bearbeiten",
+        "Edit expense": "Auslage bearbeiten",
+        "Edit payment": "Zahlung bearbeiten",
+        "Notes": "Notizen",
+        "Please enter a label": "Bitte eine Bezeichnung eingeben",
+        "Please enter a name": "Bitte einen Namen eingeben",
+        "The “Leiterrunde” app must be enabled.": "Die App „Leiterrunde“ muss aktiviert sein.",
+        "Invalid date (YYYY-MM-DD)": "Invalid date (YYYY-MM-DD)",
+        "Invalid amount": "Invalid amount"
     },
     "pluralForm": "nplurals=2; plural=(n != 1);"
 }
