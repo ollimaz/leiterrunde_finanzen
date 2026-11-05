@@ -14,11 +14,13 @@ const NAV = [
 	{ route: '#/konten', label: _t('Bank accounts'), cap: 'finance.read', icon: 'bank' },
 ];
 
-function assignSelect(t, open, api) {
+function assignSelect(t, open, api, reload) {
 	return h('select', { onchange: async (e) => {
 		if (e.target.value) {
-			await api('/transactions/' + t.id + '/assign', { method: 'POST', json: { obligation_id: +e.target.value } });
-			toast(_t('Assigned'), false);
+			try {
+				await api('/transactions/' + t.id + '/assign', { method: 'POST', json: { obligation_id: +e.target.value } });
+				toast(_t('Assigned'), false); reload();
+			} catch (er) { toast(er.message); }
 		}
 	} },
 		h('option', { value: '' }, '–'),
@@ -36,7 +38,7 @@ async function viewUmsaetze(v, ME, { api }) {
 			h('tbody', {}, ...rows.map(t => h('tr', {},
 				h('td', {}, formatDate(t.booking_date)), h('td', { class: 'num' }, formatMoney(t.amount)),
 				h('td', {}, t.counterparty || ''), h('td', {}, t.purpose || ''),
-				h('td', {}, t.obligation_id ? _t('Assigned') + ' #' + t.obligation_id : assignSelect(t, open, api)),
+				h('td', {}, t.obligation_id ? _t('Assigned') + ' #' + t.obligation_id : assignSelect(t, open, api, () => viewUmsaetze(v, ME, { api }))),
 				canWrite ? h('td', { class: 'lr-actions' }, h('button', { class: 'lr-btn quiet', onclick: async () => {
 					if (!confirm(_t('Delete this transaction?'))) return;
 					try { await api('/transactions/' + t.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewUmsaetze(v, ME, { api }); }
@@ -196,7 +198,7 @@ async function viewImport(v, ME, { api }) {
 		h('h2', { class: 'lr-section' }, _t('IMAP fetch')),
 		h('p', { class: 'lr-muted' }, _t('Last status: ') + (imap.imap_last_status || '–')),
 		h('button', { class: 'lr-btn secondary', onclick: async () => {
-			try { const r = await api('/imap/poll', { method: 'POST', json: {} }); toast(_t('{fetched} mails: {imported} imported', { fetched: r.fetched, imported: r.imported }), (r.errors || []).length > 0); }
+			try { const r = await api('/imap/poll', { method: 'POST', json: {} }); toast(_t('{fetched} mails: {imported} imported', { fetched: r.fetched, imported: r.imported }), (r.errors || []).length > 0); viewImport(v, ME, { api }); }
 			catch (e) { toast(e.message); }
 		} }, _t('Fetch now')));
 }
