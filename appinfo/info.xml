@@ -11,9 +11,9 @@
 	<summary>Accounts, payments and expenses for the leader team</summary>
 	<summary lang="de">Konten, Zahlungen und Auslagen für die Leiterrunde</summary>
 	<description><![CDATA[Finances module of the Leiterrunde suite – requires the Leiterrunde app. Bank accounts with CSV/camt.053 and IMAP import, payment obligations, expense claims and transaction matching.]]></description>
+	<version>0.0.1</version>
 	<licence>agpl</licence>
 	<author>Leiterrunde</author>
-	<version>0.0.1</version>
 	<namespace>LeiterrundeFinanzen</namespace>
 	<category>organization</category>
 	<bugs>https://github.com/ollimaz/leiterrunde_finanzen/issues</bugs>
@@ -21,6 +21,21 @@
 	<dependencies>
 		<nextcloud min-version="29" max-version="36"/>
 	</dependencies>
+	<background-jobs>
+		<job>OCA\LeiterrundeFinanzen\BackgroundJob\ObligationCheckJob</job>
+		<job>OCA\LeiterrundeFinanzen\BackgroundJob\ImapPollJob</job>
+	</background-jobs>
+	<repair-steps>
+		<post-migration>
+			<step>OCA\LeiterrundeFinanzen\Migration\MigrateConfig</step>
+		</post-migration>
+		<install>
+			<step>OCA\LeiterrundeFinanzen\Migration\MigrateConfig</step>
+		</install>
+	</repair-steps>
+	<settings>
+		<admin>OCA\LeiterrundeFinanzen\Settings\FinanzenPage</admin>
+	</settings>
 	<navigations>
 		<navigation>
 			<name>Finances</name>
@@ -28,19 +43,4 @@
 			<icon>leiterrunde_finanzen.svg</icon>
 		</navigation>
 	</navigations>
-	<background-jobs>
-		<job>OCA\LeiterrundeFinanzen\BackgroundJob\ObligationCheckJob</job>
-		<job>OCA\LeiterrundeFinanzen\BackgroundJob\ImapPollJob</job>
-	</background-jobs>
-	<repair-steps>
-		<install>
-			<step>OCA\LeiterrundeFinanzen\Migration\MigrateConfig</step>
-		</install>
-		<post-migration>
-			<step>OCA\LeiterrundeFinanzen\Migration\MigrateConfig</step>
-		</post-migration>
-	</repair-steps>
-	<settings>
-		<admin>OCA\LeiterrundeFinanzen\Settings\FinanzenPage</admin>
-	</settings>
 </info>
