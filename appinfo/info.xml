@@ -11,7 +11,7 @@
 	<summary>Accounts, payments and expenses for the leader team</summary>
 	<summary lang="de">Konten, Zahlungen und Auslagen für die Leiterrunde</summary>
 	<description><![CDATA[Finances module of the Leiterrunde suite – requires the Leiterrunde app. Bank accounts with CSV/camt.053 and IMAP import, payment obligations, expense claims and transaction matching.]]></description>
-	<version>0.0.1</version>
+	<version>0.0.2</version>
 	<licence>agpl</licence>
 	<author>Leiterrunde</author>
 	<namespace>LeiterrundeFinanzen</namespace>
