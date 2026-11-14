@@ -22,7 +22,7 @@ const t = (s, v) => window.t('leiterrunde_finanzen', s, v, undefined, { escape: 
 	const folder = mk(t('Folder'), Object.assign(document.createElement('input'), { value: s.imap_folder || 'INBOX' }));
 	const interval = mk(t('Fetch interval'), (() => { const sel = document.createElement('select');
 		for (const v of [15, 30, 60]) { const o = document.createElement('option'); o.value = v; o.textContent = v + ' ' + t('minutes'); o.selected = String(s.imap_interval) === String(v); sel.append(o); } return sel; })());
-	const enabledC = document.createElement('input'); enabledC.type = 'checkbox'; enabledC.className = 'checkbox'; enabledC.checked = s.imap_enabled === '1';
+	const enabledC = document.createElement('input'); enabledC.type = 'checkbox'; enabledC.checked = s.imap_enabled === '1';
 	form.append(Object.assign(document.createElement('label'), {}, enabledC, document.createTextNode(' ' + t('Enable IMAP fetch'))));
 	const cats = mk(t('Expense categories (comma-separated)'), Object.assign(document.createElement('input'), { value: s.expense_categories || '' }));
 	form.append(Object.assign(document.createElement('p'), { className: 'settings-hint', textContent: t('Last fetch: ') + (s.imap_last_status || '–') }));

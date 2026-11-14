@@ -7,12 +7,64 @@ const { t: _t, n: _n } = window.LeiterrundeUI.l10n('leiterrunde_finanzen');
 const APP = 'leiterrunde_finanzen';
 
 const NAV = [
-	{ route: '#/umsaetze', label: _t('Transactions'), cap: 'finance.read', icon: 'swap' },
-	{ route: '#/zahlungen', label: _t('Open payments'), cap: 'finance.read', icon: 'clock' },
+	{ route: '#/erfassen', label: _t('New entry'), cap: null, icon: 'plus' },
 	{ route: '#/auslagen', label: _t('Expenses'), cap: null, icon: 'receipt' },
+	{ route: '#/zahlungen', label: _t('Incoming payments'), cap: 'finance.read', icon: 'clock' },
+	{ route: '#/umsaetze', label: _t('Bank transactions'), cap: 'finance.read', icon: 'swap' },
+	{ route: '#/buecher', label: _t('Accounting books'), cap: 'finance.read', icon: 'bank' },
 	{ route: '#/import', label: _t('Import'), cap: 'finance.write', icon: 'import' },
 	{ route: '#/konten', label: _t('Bank accounts'), cap: 'finance.read', icon: 'bank' },
 ];
+
+const PAYMENT_METHODS = ['personal', 'cash', 'card', 'transfer'];
+function methodLabel(m) {
+	return { personal: _t('Personal advance'), cash: _t('Cash'), card: _t('Card'), transfer: _t('Bank transfer') }[m] || m;
+}
+
+async function paymentSelectors(api, current = {}) {
+	const opts = await api('/books/options').catch(() => ({ events: [], books: [], accounts: [] }));
+	const eventSel = h('select', {},
+		h('option', { value: '' }, _t('No event / general')),
+		...opts.events.map(e => h('option', { value: e.id, selected: current.event_id === e.id }, e.title)));
+	const newEvent = h('input', { placeholder: _t('…or create new event') });
+	const bookSel = h('select', {});
+	const methodSel = h('select', {},
+		...PAYMENT_METHODS.map(v => h('option', { value: v, selected: (current.payment_method || 'personal') === v }, methodLabel(v))));
+	const accSel = h('select', {},
+		h('option', { value: '' }, '–'),
+		...opts.accounts.map(a => h('option', { value: a.id, selected: current.source_account_id === a.id }, a.name)));
+	const refreshBooks = () => {
+		bookSel.textContent = '';
+		bookSel.append(h('option', { value: '' }, '–'));
+		opts.books.filter(b => (b.event_id || null) === (eventSel.value ? +eventSel.value : null))
+			.forEach(b => bookSel.append(h('option', { value: b.id, selected: current.book_id === b.id },
+				b.name + ' (' + _t(b.kind === 'cash' ? 'Cash book' : 'Bank book') + ')')));
+	};
+	eventSel.onchange = refreshBooks;
+	refreshBooks();
+	return {
+		opts, eventSel, bookSel, methodSel, accSel, newEvent,
+		values: () => ({
+			event_id: eventSel.value ? +eventSel.value : 0,
+			book_id: bookSel.value ? +bookSel.value : 0,
+			payment_method: methodSel.value,
+			source_account_id: accSel.value ? +accSel.value : 0,
+			new_event: eventSel.value ? '' : newEvent.value.trim(),
+		}),
+	};
+}
+
+function bookSelect(t, books, api, reload) {
+	return h('select', { onchange: async (e) => {
+		try {
+			await api('/transactions/' + t.id + '/assign', { method: 'POST', json: { obligation_id: t.obligation_id, book_id: e.target.value ? +e.target.value : 0 } });
+			toast(_t('Saved'), false); reload();
+		} catch (er) { toast(er.message); }
+	} },
+		h('option', { value: '' }, '–'),
+		...books.filter(b => b.kind === 'bank' && b.account_id === t.account_id)
+			.map(b => h('option', { value: b.id, selected: t.book_id === b.id }, b.name)));
+}
 
 function assignSelect(t, open, api, reload) {
 	return h('select', { onchange: async (e) => {
@@ -30,15 +82,17 @@ function assignSelect(t, open, api, reload) {
 async function viewUmsaetze(v, ME, { api }) {
 	const rows = await api('/transactions?unassigned=1');
 	const obligations = await api('/obligations');
+	const opts = await api('/books/options').catch(() => ({ books: [] }));
 	const open = obligations.filter(o => o.status === 'open' || o.status === 'partial');
 	const canWrite = ME.caps['finance.write'];
-	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Transactions'), lede: _n('%n transaction', '%n transactions', rows.length) + ', ' + _n('%n unassigned', '%n unassigned', rows.filter(t => !t.obligation_id).length) + '.' }),
+	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Bank transactions'), lede: _n('%n transaction', '%n transactions', rows.length) + ', ' + _n('%n unassigned', '%n unassigned', rows.filter(t => !t.obligation_id).length) + ' – ' + _t('imported bank movements, assign them to incoming payments or books.') }),
 		rows.length ? h('table', { class: 'lr-table' },
-			h('thead', {}, h('tr', {}, h('th', {}, _t('Date')), h('th', {}, _t('Amount')), h('th', {}, _t('Counterparty')), h('th', {}, _t('Purpose')), h('th', {}, _t('Assignment')), canWrite ? h('th', {}, '') : null)),
+			h('thead', {}, h('tr', {}, h('th', {}, _t('Date')), h('th', {}, _t('Amount')), h('th', {}, _t('Counterparty')), h('th', {}, _t('Purpose')), h('th', {}, _t('Assignment')), h('th', {}, _t('Book')), canWrite ? h('th', {}, '') : null)),
 			h('tbody', {}, ...rows.map(t => h('tr', {},
 				h('td', {}, formatDate(t.booking_date)), h('td', { class: 'num' }, formatMoney(t.amount)),
 				h('td', {}, t.counterparty || ''), h('td', {}, t.purpose || ''),
 				h('td', {}, t.obligation_id ? _t('Assigned') + ' #' + t.obligation_id : assignSelect(t, open, api, () => viewUmsaetze(v, ME, { api }))),
+				h('td', {}, canWrite && +t.amount > 0 ? bookSelect(t, opts.books, api, () => viewUmsaetze(v, ME, { api })) : '–'),
 				canWrite ? h('td', { class: 'lr-actions' }, h('button', { class: 'lr-btn quiet', onclick: async () => {
 					if (!confirm(_t('Delete this transaction?'))) return;
 					try { await api('/transactions/' + t.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewUmsaetze(v, ME, { api }); }
@@ -50,49 +104,44 @@ async function viewUmsaetze(v, ME, { api }) {
 async function viewZahlungen(v, ME, { api }) {
 	const rows = await api('/obligations');
 	const canWrite = ME.caps['finance.write'];
-	let form = null;
-	if (canWrite) {
-		const label = h('input', {}), payer = h('input', {}), amount = h('input', { type: 'number', step: '0.01' }),
-			due = h('input', { type: 'date' }), ref = h('input', {});
-		form = h('div', { class: 'lr-form lr-formgrid' },
-			field(_t('Label'), label, 4), field(_t('Payer'), payer, 4), field(_t('Amount'), amount, 2),
-			field(_t('Due'), due, 4), field(_t('Reference'), ref, 4),
-			formActions(h('button', { class: 'lr-btn', onclick: async () => {
-				try { await api('/obligations', { method: 'POST', json: { label: label.value, payer_name: payer.value, amount_due: +amount.value, due_date: due.value, reference: ref.value } }); toast(_t('Created'), false); viewZahlungen(v, ME, { api }); }
-				catch (e) { toast(e.message); }
-			} }, _t('Create'))));
-	}
-	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Open payments') }), form,
+	const opts = await api('/books/options').catch(() => ({ events: [] }));
+	const eventName = id => { const e = opts.events.find(x => x.id === id); return e ? e.title : (id ? '#' + id : ''); };
+	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Incoming payments'),
+			lede: _t('Money the group still expects. Incoming bank transfers are matched and marked paid automatically.'),
+			actions: canWrite ? [h('button', { class: 'lr-btn', onclick: () => { location.hash = '#/erfassen/eingang'; } }, _t('New entry'))] : [] }),
 		rows.length ? h('table', { class: 'lr-table' },
-			h('thead', {}, h('tr', {}, h('th', {}, _t('Label')), h('th', {}, _t('Payer')), h('th', {}, _t('Amount')), h('th', {}, _t('Open')), h('th', {}, _t('Due')), h('th', {}, _t('Reference')), h('th', {}, _t('Status')), canWrite ? h('th', {}, '') : null)),
+			h('thead', {}, h('tr', {}, h('th', {}, _t('Label')), h('th', {}, _t('Payer')), h('th', {}, _t('Amount')), h('th', {}, _t('Open')), h('th', {}, _t('Due')), h('th', {}, _t('Reference')), h('th', {}, _t('Event')), h('th', {}, _t('Status')), canWrite ? h('th', {}, '') : null)),
 			h('tbody', {}, ...rows.map(o => h('tr', {},
 				h('td', {}, o.label), h('td', {}, o.payer_name || ''),
 				h('td', {}, formatMoney(o.amount_due)), h('td', {}, o.remaining !== undefined ? formatMoney(o.remaining) : '–'),
-				h('td', {}, formatDate(o.due_date) || ''), h('td', {}, o.reference || ''), h('td', {}, badge(o.status)),
+				h('td', {}, formatDate(o.due_date) || ''), h('td', {}, o.reference || ''), h('td', {}, eventName(o.event_id)), h('td', {}, badge(o.status)),
 				canWrite ? h('td', { class: 'lr-actions' },
-					h('button', { class: 'lr-btn secondary', onclick: () => obligationForm(v, ME, { api }, o) }, _t('Edit')),
+					h('button', { class: 'lr-btn secondary', onclick: () => obligationForm(v, ME, { api }, o, opts.events) }, _t('Edit')),
 					h('button', { class: 'lr-btn quiet', onclick: async () => {
 						if (!confirm(_t('Delete payment "{label}"?', { label: o.label }))) return;
 						try { await api('/obligations/' + o.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewZahlungen(v, ME, { api }); }
 						catch (e) { toast(e.message); }
 					} }, _t('Delete'))) : null))))
-			: emptyState(_t('No open payments.')));
+			: emptyState(_t('No incoming payments.')));
 }
 
-function obligationForm(v, ME, { api }, o) {
+function obligationForm(v, ME, { api }, o, events = []) {
 	const label = h('input', { value: o.label }), payer = h('input', { value: o.payer_name || '' }),
 		amount = h('input', { type: 'number', step: '0.01', value: o.amount_due }),
 		due = h('input', { type: 'date', value: o.due_date || '' }), ref = h('input', { value: o.reference || '' }),
 		notes = h('input', { value: o.notes || '' }),
+		eventSel = h('select', {}, h('option', { value: '' }, _t('No event / general')),
+			...events.map(e => h('option', { value: e.id, selected: o.event_id === e.id }, e.title))),
 		status = h('select', {}, ...['open', 'partial', 'paid', 'cancelled'].map(s => h('option', { value: s, selected: o.status === s }, s)));
 	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Edit payment') }),
 		h('div', { class: 'lr-form lr-formgrid' },
 			field(_t('Label'), label, 4), field(_t('Payer'), payer, 4), field(_t('Amount'), amount, 2),
 			field(_t('Due'), due, 4), field(_t('Reference'), ref, 4), field(_t('Status'), status, 2), field(_t('Notes'), notes, 6),
+			field(_t('Event'), eventSel, 4),
 			formActions(
 				h('button', { class: 'lr-btn', onclick: async () => {
 					if (!label.value.trim()) { toast(_t('Please enter a label')); return; }
-					const body = { label: label.value, payer_name: payer.value || null, amount_due: +amount.value, due_date: due.value || null, reference: ref.value || null, notes: notes.value || null };
+					const body = { label: label.value, payer_name: payer.value || null, amount_due: +amount.value, due_date: due.value || null, reference: ref.value || null, notes: notes.value || null, event_id: eventSel.value ? +eventSel.value : 0 };
 					if (status.value !== o.status) body.status = status.value;
 					try { await api('/obligations/' + o.id, { method: 'PUT', json: body }); toast(_t('Saved'), false); viewZahlungen(v, ME, { api }); }
 					catch (e) { toast(e.message); }
@@ -108,46 +157,28 @@ async function viewAuslagen(v, ME, { api, coreApi }) {
 	const showActions = canDecide || canPay || rows.some(canMutate);
 	const persons = await coreApi('/persons/options').catch(() => []);
 	const cats = await api('/expenses/categories').catch(() => []);
+	const opts = await api('/books/options').catch(() => ({ events: [] }));
+	const eventName = id => { const e = opts.events.find(x => x.id === id); return e ? e.title : (id ? '#' + id : ''); };
+	const showMethod = m => methodLabel(m) || '–';
 	const name = id => { const p = persons.find(x => x.id === id); return p ? p.last_name + ', ' + p.first_name : '#' + id; };
-	const forOthers = !!ME.caps['finance.write'];
 	const act = async (id, action) => {
 		try { await api('/expenses/' + id + '/' + action, { method: 'POST', json: {} }); viewAuslagen(v, ME, { api, coreApi }); }
 		catch (e) { toast(e.message); }
 	};
-	let pid = forOthers ? null : (ME.person?.id ?? null);
-	const date = h('input', { type: 'date', max: new Date().toISOString().slice(0, 10) }),
-		amount = h('input', { type: 'number', step: '0.01', min: '0.01', inputmode: 'decimal' }),
-		cat = cats.length ? h('select', {}, ...cats.map(c => h('option', { value: c }, c))) : h('input', {}),
-		desc = h('input', {}), file = h('input', { type: 'file', accept: '.pdf,.jpg,.jpeg,.png,.heic' });
-	const submit = h('button', { class: 'lr-btn', onclick: async () => {
-		if (!pid) { toast(_t('Please select a person')); return; }
-		if (!date.value || !(+amount.value > 0)) { toast(_t('Please enter a date and an amount')); return; }
-		const fd = new FormData();
-		fd.append('person_id', pid); fd.append('expense_date', date.value);
-		fd.append('amount', amount.value); fd.append('category', cat.value); fd.append('description', desc.value);
-		if (file.files[0]) fd.append('file', file.files[0]);
-		try { await api('/expenses', { method: 'POST', body: fd }); toast(_t('Submitted'), false); viewAuslagen(v, ME, { api, coreApi }); }
-		catch (e) { toast(e.message); }
-	} }, _t('Submit'));
-	const form = (forOthers || pid)
-		? h('div', { class: 'lr-form lr-formgrid' },
-			forOthers ? field(_t('Person'), window.LeiterrundeUI.personPicker({ persons, onChange: (id) => { pid = id; } }), 6) : null,
-			field(_t('Date'), date, 3), field(_t('Amount'), amount, 3),
-			field(_t('Category'), cat, 4), field(_t('Description'), desc, 8),
-			field(_t('Receipt'), file, 6),
-			formActions(submit))
-		: h('p', { class: 'lr-empty' }, _t('Your account is not linked to a person.'));
-	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Expenses') }), form,
+	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Expenses'),
+			actions: [h('button', { class: 'lr-btn', onclick: () => { location.hash = '#/erfassen/auslage'; } }, _t('New entry'))] }),
 		rows.length ? h('table', { class: 'lr-table' },
-			h('thead', {}, h('tr', {}, h('th', {}, _t('Person')), h('th', {}, _t('Date')), h('th', {}, _t('Amount')), h('th', {}, _t('Category')), h('th', {}, _t('Status')), h('th', {}, _t('Receipt')), showActions ? h('th', {}, _t('Action')) : null)),
+			h('thead', {}, h('tr', {}, h('th', {}, _t('Person')), h('th', {}, _t('Date')), h('th', {}, _t('Amount')), h('th', {}, _t('Category')), h('th', {}, _t('Event')), h('th', {}, _t('Method')), h('th', {}, _t('Status')), h('th', {}, _t('Receipt')), showActions ? h('th', {}, _t('Action')) : null)),
 			h('tbody', {}, ...rows.map(e => h('tr', {},
 				h('td', {}, name(e.person_id)), h('td', {}, formatDate(e.expense_date)), h('td', { class: 'num' }, formatMoney(e.amount)),
-				h('td', {}, e.category || ''), h('td', {}, badge(e.status)),
-				h('td', {}, e.file_id ? h('a', { href: OC.generateUrl('/apps/' + APP + '/api/expenses/' + e.id + '/file'), target: '_blank' }, e.file_name || _t('Receipt')) : '–'),
+				h('td', {}, e.category || ''), h('td', {}, eventName(e.event_id)), h('td', {}, showMethod(e.payment_method)), h('td', {}, badge(e.status)),
+				h('td', {}, e.file_id ? h('a', { href: OC.generateUrl('/apps/' + APP + '/api/expenses/' + e.id + '/file'), target: '_blank' }, e.file_name || _t('Receipt'))
+					: (canMutate(e) && e.status === 'pending' ? receiptUpload(e, api, () => viewAuslagen(v, ME, { api, coreApi })) : '–')),
 				showActions ? h('td', { class: 'lr-actions' },
 					canDecide && e.status === 'pending' ? h('button', { class: 'lr-btn', onclick: () => act(e.id, 'approve') }, _t('Approve')) : null,
 					canDecide && e.status === 'pending' ? h('button', { class: 'lr-btn quiet', onclick: () => act(e.id, 'reject') }, _t('Reject')) : null,
 					canPay && e.status === 'approved' ? h('button', { class: 'lr-btn', onclick: () => act(e.id, 'pay') }, _t('Pay')) : null,
+					canDecide && (e.status === 'approved' || e.status === 'rejected') ? h('button', { class: 'lr-btn secondary', onclick: () => act(e.id, 'reopen') }, _t('Reopen')) : null,
 					canMutate(e) ? h('button', { class: 'lr-btn secondary', onclick: () => expenseForm(v, ME, { api, coreApi }, e, cats) }, _t('Edit')) : null,
 					canMutate(e) ? h('button', { class: 'lr-btn quiet', onclick: async () => {
 						if (!confirm(_t('Delete this expense?'))) return;
@@ -157,7 +188,20 @@ async function viewAuslagen(v, ME, { api, coreApi }) {
 			: emptyState(_t('No expenses.')));
 }
 
-function expenseForm(v, ME, { api, coreApi }, e, cats) {
+function receiptUpload(e, api, reload) {
+	const input = h('input', { type: 'file', accept: '.pdf,.jpg,.jpeg,.png,.heic', style: 'display:none', onchange: async () => {
+		if (!input.files[0]) return;
+		const fd = new FormData();
+		fd.append('file', input.files[0]);
+		try { await api('/expenses/' + e.id + '/file', { method: 'POST', body: fd }); toast(_t('Receipt uploaded'), false); reload(); }
+		catch (er) { toast(er.message); }
+	} });
+	const btn = h('button', { class: 'lr-btn secondary', onclick: () => input.click() }, _t('Upload receipt'));
+	return h('span', {}, input, btn);
+}
+
+async function expenseForm(v, ME, { api, coreApi }, e, cats) {
+	const pay = await paymentSelectors(api, e);
 	const date = h('input', { type: 'date', max: new Date().toISOString().slice(0, 10), value: e.expense_date }),
 		amount = h('input', { type: 'number', step: '0.01', min: '0.01', inputmode: 'decimal', value: e.amount }),
 		cat = cats.length ? h('select', {}, ...cats.map(c => h('option', { value: c, selected: e.category === c }, c))) : h('input', { value: e.category || '' }),
@@ -166,13 +210,47 @@ function expenseForm(v, ME, { api, coreApi }, e, cats) {
 		h('div', { class: 'lr-form lr-formgrid' },
 			field(_t('Date'), date, 3), field(_t('Amount'), amount, 3),
 			field(_t('Category'), cat, 4), field(_t('Description'), desc, 8),
+			field(_t('Event'), pay.eventSel, 4), field(_t('Accounting book'), pay.bookSel, 4),
+			field(_t('Payment method'), pay.methodSel, 4), field(_t('Source account'), pay.accSel, 4),
 			formActions(
 				h('button', { class: 'lr-btn', onclick: async () => {
 					if (!date.value || !(+amount.value > 0)) { toast(_t('Please enter a date and an amount')); return; }
-					try { await api('/expenses/' + e.id, { method: 'PUT', json: { expense_date: date.value, amount: +amount.value, category: cat.value || null, description: desc.value || null } }); toast(_t('Saved'), false); viewAuslagen(v, ME, { api, coreApi }); }
+					const pv = pay.values();
+					try { await api('/expenses/' + e.id, { method: 'PUT', json: { expense_date: date.value, amount: +amount.value, category: cat.value || null, description: desc.value || null, event_id: pv.event_id, book_id: pv.book_id, payment_method: pv.payment_method, source_account_id: pv.source_account_id } }); toast(_t('Saved'), false); viewAuslagen(v, ME, { api, coreApi }); }
 					catch (er) { toast(er.message); }
 				} }, _t('Save')),
 				h('button', { class: 'lr-btn secondary', onclick: () => viewAuslagen(v, ME, { api, coreApi }) }, _t('Cancel')))));
+}
+
+async function viewBuecher(v, ME, { api }) {
+	const data = await api('/books');
+	const canWrite = ME.caps['finance.write'];
+	const pay = await paymentSelectors(api);
+	const eventName = id => { const e = pay.opts.events.find(x => x.id === id); return e ? e.title : _t('General'); };
+	const accName = id => { const a = pay.opts.accounts.find(x => x.id === id); return a ? a.name : '–'; };
+	const name = h('input', {}), kind = h('select', {}, h('option', { value: 'bank' }, _t('Bank book')), h('option', { value: 'cash' }, _t('Cash book')));
+	let form = null;
+	if (canWrite) {
+		form = h('div', { class: 'lr-form lr-formgrid' },
+			field(_t('Name'), name, 4), field(_t('Kind'), kind, 3), field(_t('Event'), pay.eventSel, 4), field(_t('Bank account'), pay.accSel, 4),
+			formActions(h('button', { class: 'lr-btn', onclick: async () => {
+				if (!name.value.trim()) { toast(_t('Please enter a name')); return; }
+				try {
+					await api('/books', { method: 'POST', json: { name: name.value, kind: kind.value, event_id: pay.eventSel.value ? +pay.eventSel.value : 0, account_id: kind.value === 'bank' && pay.accSel.value ? +pay.accSel.value : null } });
+					toast(_t('Created'), false); viewBuecher(v, ME, { api });
+				} catch (e) { toast(e.message); }
+			} }, _t('Create'))));
+	}
+	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Accounting books'),
+		lede: _t('Income {income} · Outgoing {outgoing} · Committed {committed}', { income: formatMoney(data.income), outgoing: formatMoney(data.outgoing), committed: formatMoney(data.committed) }) }), form,
+		data.books.length ? h('table', { class: 'lr-table' },
+			h('thead', {}, h('tr', {}, h('th', {}, _t('Name')), h('th', {}, _t('Event')), h('th', {}, _t('Kind')), h('th', {}, _t('Bank account')), h('th', {}, _t('Income')), h('th', {}, _t('Outgoing')), h('th', {}, _t('Committed')), h('th', {}, _t('Balance')))),
+			h('tbody', {}, ...data.books.map(b => h('tr', {},
+				h('td', {}, b.name), h('td', {}, eventName(b.event_id)),
+				h('td', {}, _t(b.kind === 'cash' ? 'Cash book' : 'Bank book')), h('td', {}, accName(b.account_id)),
+				h('td', { class: 'num' }, formatMoney(b.income)), h('td', { class: 'num' }, formatMoney(b.outgoing)),
+				h('td', { class: 'num' }, formatMoney(b.committed)), h('td', { class: 'num' }, formatMoney(b.balance))))))
+			: emptyState(_t('No accounting books yet.')));
 }
 
 async function viewImport(v, ME, { api }) {
@@ -251,14 +329,124 @@ function accountForm(v, ME, { api }, a, parsers) {
 				h('button', { class: 'lr-btn secondary', onclick: () => viewKonten(v, ME, { api }) }, _t('Cancel')))));
 }
 
+async function viewErfassen(v, ME, { api, coreApi }) {
+	const canWrite = ME.caps['finance.write'];
+	const kind = location.hash.split('/')[2] === 'eingang' && canWrite ? 'eingang' : 'auslage';
+	const typeSel = h('select', { 'aria-label': _t('Type'), onchange: (e) => { location.hash = '#/erfassen/' + e.target.value; } },
+		h('option', { value: 'auslage', selected: kind === 'auslage' }, _t('Outgoing – expense / advance')),
+		canWrite ? h('option', { value: 'eingang', selected: kind === 'eingang' }, _t('Incoming – someone still has to pay')) : null);
+	if (kind === 'eingang') return erfassenEingang(v, ME, { api, coreApi }, typeSel);
+	return erfassenAuslage(v, ME, { api, coreApi }, typeSel);
+}
+
+async function erfassenAuslage(v, ME, { api, coreApi }, typeSel) {
+	const canWrite = ME.caps['finance.write'];
+	let pid = canWrite ? null : (ME.person?.id ?? null);
+	if (!canWrite && pid === null) {
+		put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('New entry') }),
+			h('p', { class: 'lr-empty' }, _t('Your account is not linked to a person.')));
+		return;
+	}
+	const persons = canWrite ? await coreApi('/persons/options').catch(() => []) : [];
+	const cats = await api('/expenses/categories').catch(() => []);
+	const today = new Date().toISOString().slice(0, 10);
+	const date = h('input', { type: 'date', max: today, value: today }),
+		amount = h('input', { type: 'number', step: '0.01', min: '0.01', inputmode: 'decimal' }),
+		cat = cats.length ? h('select', {}, ...cats.map(c => h('option', { value: c }, c))) : h('input', {}),
+		desc = h('input', {}), file = h('input', { type: 'file', accept: '.pdf,.jpg,.jpeg,.png,.heic' });
+	let pv = { values: () => ({ event_id: 0, book_id: 0, payment_method: 'personal', source_account_id: 0, new_event: '' }) };
+	let extra = null;
+	if (canWrite) {
+		const pay = await paymentSelectors(api);
+		pv = pay;
+		extra = h('details', { class: 'lr-details' }, h('summary', {}, _t('Bookkeeping (optional)')),
+			h('div', { class: 'lr-form lr-formgrid' },
+				field(_t('Event'), pay.eventSel, 6), field(_t('New event'), pay.newEvent, 6),
+				field(_t('Accounting book'), pay.bookSel, 6),
+				field(_t('Payment method'), pay.methodSel, 6), field(_t('Source account'), pay.accSel, 6)));
+	}
+	const submit = h('button', { class: 'lr-btn', onclick: async () => {
+		if (!pid) { toast(_t('Please select a person')); return; }
+		if (!date.value || !(+amount.value > 0)) { toast(_t('Please enter a date and an amount')); return; }
+		const fd = new FormData();
+		fd.append('person_id', pid); fd.append('expense_date', date.value);
+		fd.append('amount', amount.value); fd.append('category', cat.value); fd.append('description', desc.value);
+		const pvv = pv.values();
+		fd.append('event_id', pvv.event_id); fd.append('book_id', pvv.book_id);
+		fd.append('payment_method', pvv.payment_method); fd.append('source_account_id', pvv.source_account_id);
+		if (pvv.new_event) fd.append('new_event', pvv.new_event);
+		if (file.files[0]) fd.append('file', file.files[0]);
+		try { await api('/expenses', { method: 'POST', body: fd }); toast(_t('Submitted'), false); location.hash = '#/auslagen'; }
+		catch (e) { toast(e.message); }
+	} }, _t('Submit'));
+	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('New entry') }),
+		h('div', { class: 'lr-form lr-formgrid' },
+			field(_t('Type'), typeSel, 4),
+			canWrite ? field(_t('Person'), window.LeiterrundeUI.personPicker({ persons, onChange: (id) => { pid = id; } }), 4) : null,
+			field(_t('Date'), date, 4), field(_t('Amount'), amount, 4),
+			field(_t('Category'), cat, 4), field(_t('Description'), desc, 8),
+			field(_t('Receipt'), file, 6, _t('Needed for approval – PDF or photo')),
+			formActions(submit)),
+		extra);
+}
+
+async function erfassenEingang(v, ME, { api, coreApi }, typeSel) {
+	const persons = await coreApi('/persons/options').catch(() => []);
+	const opts = await api('/books/options').catch(() => ({ events: [] }));
+	const label = h('input', {}),
+		amount = h('input', { type: 'number', step: '0.01', min: '0.01', inputmode: 'decimal' }),
+		due = h('input', { type: 'date' }), ref = h('input', {}),
+		eventSel = h('select', {}, h('option', { value: '' }, _t('No event / general')),
+			...opts.events.map(e => h('option', { value: e.id }, e.title))),
+		newEvent = h('input', { placeholder: _t('…or create new event') }),
+		gotIt = h('input', { type: 'checkbox' });
+	let pid = null, payerName = null;
+	const payerCtl = persons.length
+		? window.LeiterrundeUI.personPicker({ persons, onChange: (id) => {
+			pid = id;
+			const p = persons.find(x => x.id === id);
+			payerName = p ? p.last_name + ', ' + p.first_name : null;
+		} })
+		: h('input', { oninput: (e) => { payerName = e.target.value; } });
+	const submit = h('button', { class: 'lr-btn', onclick: async () => {
+		if (!label.value.trim() || !(+amount.value > 0)) { toast(_t('Please enter a label and an amount')); return; }
+		try {
+			const o = await api('/obligations', { method: 'POST', json: {
+				label: label.value, amount_due: +amount.value,
+				payer_name: payerName, person_id: pid,
+				due_date: due.value || null, reference: ref.value || null,
+				event_id: eventSel.value ? +eventSel.value : 0,
+				new_event: eventSel.value ? '' : newEvent.value.trim(),
+			} });
+			if (gotIt.checked) {
+				try { await api('/obligations/' + o.id, { method: 'PUT', json: { status: 'paid' } }); }
+				catch (er) { toast(er.message); }
+			}
+			toast(_t('Recorded'), false); location.hash = '#/zahlungen';
+		} catch (e) { toast(e.message); }
+	} }, _t('Submit'));
+	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('New entry'),
+			lede: _t('For money the group still expects – e.g. camp fees. Incoming bank payments are matched automatically.') }),
+		h('div', { class: 'lr-form lr-formgrid' },
+			field(_t('Type'), typeSel, 4),
+			field(_t('Label'), label, 4), field(_t('Amount'), amount, 2),
+			field(_t('Payer'), payerCtl, 4), field(_t('Due'), due, 4),
+			field(_t('Reference'), ref, 4, _t('Goes on the bank transfer for automatic matching')),
+			field(_t('Event'), eventSel, 4), field(_t('New event'), newEvent, 4),
+			h('div', { class: 'lr-f col-12' }, checkField(_t('Already received'), gotIt)),
+			formActions(submit)));
+}
+
 mountApp({
 	appId: APP,
 	title: _t('Finances'),
 	nav: NAV,
 	routes: {
+		'#/erfassen': viewErfassen,
 		'#/umsaetze': viewUmsaetze,
 		'#/zahlungen': viewZahlungen,
 		'#/auslagen': viewAuslagen,
+		'#/buecher': viewBuecher,
 		'#/import': viewImport,
 		'#/konten': viewKonten,
 	},

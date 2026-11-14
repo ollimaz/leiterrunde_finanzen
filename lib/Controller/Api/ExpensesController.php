@@ -20,6 +20,8 @@ use OCA\Leiterrunde\Service\DocumentStorageService;
 use OCA\Leiterrunde\Service\NotificationService;
 use OCA\Leiterrunde\Service\PermissionService;
 use OCA\Leiterrunde\Service\SettingsService;
+use OCA\LeiterrundeFinanzen\Service\BookService;
+use OCA\LeiterrundeFinanzen\Service\ExpenseReceiptPolicy;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
@@ -40,6 +42,7 @@ class ExpensesController extends ApiController {
 		private AuditService $audit,
 		private NotificationService $notifications,
 		private SettingsService $settings,
+		private BookService $books,
 	) {
 		parent::__construct(Application::APP_ID, $request, $logger);
 	}
@@ -87,8 +90,13 @@ class ExpensesController extends ApiController {
 		float $amount,
 		?string $category = null,
 		?string $description = null,
+		?int $event_id = null,
+		?int $book_id = null,
+		string $payment_method = 'personal',
+		?int $source_account_id = null,
+		?string $new_event = null,
 	): JSONResponse {
-		return $this->wrap(function () use ($person_id, $expense_date, $amount, $category, $description) {
+		return $this->wrap(function () use ($person_id, $expense_date, $amount, $category, $description, $event_id, $book_id, $payment_method, $source_account_id, $new_event) {
 			$own = $this->perm->currentPerson();
 			$isOwn = $own !== null && $own->getId() === $person_id;
 			if ($isOwn) {
@@ -108,6 +116,13 @@ class ExpensesController extends ApiController {
 			$e->setAmount(number_format($amount, 2, '.', ''));
 			$e->setCategory($category);
 			$e->setDescription($description);
+			$event_id = $this->books->resolveEvent($event_id > 0 ? $event_id : null, $new_event);
+			$fields = $this->books->expenseFields(
+				$event_id, $book_id > 0 ? $book_id : null,
+				$payment_method, $source_account_id > 0 ? $source_account_id : null);
+			foreach ($fields as $k => $v) {
+				$e->{'set' . str_replace(' ', '', ucwords(str_replace('_', ' ', $k)))}($v);
+			}
 			$e->setStatus('pending');
 			$e->setCreatedAt(time());
 			$upload = $this->request->getUploadedFile('file');
@@ -145,10 +160,15 @@ class ExpensesController extends ApiController {
 		?float $amount = null,
 		?string $category = null,
 		?string $description = null,
+		?int $event_id = null,
+		?int $book_id = null,
+		?string $payment_method = null,
+		?int $source_account_id = null,
 	): JSONResponse {
-		return $this->wrap(function () use ($id, $expense_date, $amount, $category, $description) {
+		return $this->wrap(function () use ($id, $expense_date, $amount, $category, $description, $event_id, $book_id, $payment_method, $source_account_id) {
 			$e = $this->mapper->find($id);
 			$this->perm->assertRecordMutation($e->getPersonId(), $e->getSubmittedBy(), $e->getStatus(), 'expenses.decide');
+			ExpenseReceiptPolicy::requirePending($e->getStatus());
 			$before = $e->jsonSerialize();
 			if ($expense_date !== null) {
 				$d = \DateTimeImmutable::createFromFormat('!Y-m-d', $expense_date);
@@ -168,6 +188,18 @@ class ExpensesController extends ApiController {
 			}
 			if ($description !== null) {
 				$e->setDescription($description);
+			}
+			$params = $this->request->getParams();
+			if (array_key_exists('event_id', $params) || array_key_exists('book_id', $params)
+				|| array_key_exists('payment_method', $params) || array_key_exists('source_account_id', $params)) {
+				$fields = $this->books->expenseFields(
+					array_key_exists('event_id', $params) ? ($event_id > 0 ? $event_id : null) : $e->getEventId(),
+					array_key_exists('book_id', $params) ? ($book_id > 0 ? $book_id : null) : $e->getBookId(),
+					$payment_method ?? $e->getPaymentMethod(),
+					array_key_exists('source_account_id', $params) ? ($source_account_id > 0 ? $source_account_id : null) : $e->getSourceAccountId());
+				foreach ($fields as $k => $v) {
+					$e->{'set' . str_replace(' ', '', ucwords(str_replace('_', ' ', $k)))}($v);
+				}
 			}
 			$e = $this->mapper->update($e);
 			$this->audit->diff('expense', $e->getId(), $before, $e->jsonSerialize());
@@ -192,6 +224,9 @@ class ExpensesController extends ApiController {
 			if ($e->getStatus() !== 'pending') {
 				throw new ApiException('Only open expenses can be decided', 409);
 			}
+			if ($status === 'approved') {
+				$this->requireReceipt($e);
+			}
 			$before = $e->jsonSerialize();
 			$e->setStatus($status);
 			$e->setDecidedBy($this->perm->requireLoggedIn()->getUID());
@@ -211,6 +246,7 @@ class ExpensesController extends ApiController {
 			if ($e->getStatus() !== 'approved') {
 				throw new ApiException('Only approved expenses can be marked as paid', 409);
 			}
+			$this->requireReceipt($e);
 			$before = $e->jsonSerialize();
 			$e->setStatus('paid');
 			$e->setPaidAt(time());
@@ -244,13 +280,60 @@ class ExpensesController extends ApiController {
 			$file = $this->files->get($e->getFileOwner(), $e->getFileId());
 			$res = new StreamResponse($file->fopen('rb'));
 			$res->addHeader('Content-Type', $file->getMimeType());
-			$res->addHeader('Content-Disposition', 'inline; filename="' . addslashes($e->getFileName() ?? 'beleg') . '"');
+			$res->addHeader('Content-Disposition', "attachment; filename*=UTF-8''" . rawurlencode($e->getFileName() ?? 'beleg'));
+			$res->addHeader('X-Content-Type-Options', 'nosniff');
 			return $res;
 		} catch (ApiException $ex) {
 			return new JSONResponse(['error' => $ex->getMessage()], $ex->getStatus());
 		} catch (\OCP\AppFramework\Db\DoesNotExistException) {
 			return new JSONResponse(['error' => 'Nicht gefunden'], 404);
 		}
+	}
+
+	#[NoAdminRequired]
+	public function uploadFile(int $id): JSONResponse {
+		return $this->wrap(function () use ($id) {
+			$e = $this->mapper->find($id);
+			$this->perm->assertRecordMutation($e->getPersonId(), $e->getSubmittedBy(), $e->getStatus(), 'expenses.decide');
+			ExpenseReceiptPolicy::requirePending($e->getStatus());
+			$upload = $this->request->getUploadedFile('file');
+			if (!is_array($upload) || empty($upload['tmp_name']) || !is_file($upload['tmp_name'])) {
+				throw new ApiException('No file uploaded', 422);
+			}
+			$stored = $this->files->store('beleg', $this->perm->requireLoggedIn()->getUID(), $upload,
+				$this->files->personVars($this->personMapper, $e->getPersonId()) + ['kategorie' => $e->getCategory() ?? '']);
+			$before = $e->jsonSerialize();
+			$e->setFileId($stored['file_id']);
+			$e->setFileOwner($stored['file_owner']);
+			$e->setFileName($stored['file_name']);
+			$e = $this->mapper->update($e);
+			$this->audit->diff('expense', $e->getId(), $before, $e->jsonSerialize());
+			return $e->jsonSerialize();
+		});
+	}
+
+	#[NoAdminRequired]
+	public function reopen(int $id): JSONResponse {
+		return $this->wrap(function () use ($id) {
+			$this->perm->require('expenses.decide');
+			$e = $this->mapper->find($id);
+			if (!in_array($e->getStatus(), ['approved', 'rejected'], true)) {
+				throw new ApiException('Only approved or rejected expenses can be reopened', 409);
+			}
+			$before = $e->jsonSerialize();
+			$e->setStatus('pending');
+			$e->setDecidedBy(null);
+			$e->setDecidedAt(null);
+			$e->setDecisionNote(null);
+			$e = $this->mapper->update($e);
+			$this->audit->diff('expense', $e->getId(), $before, $e->jsonSerialize());
+			return $e->jsonSerialize();
+		});
+	}
+
+	private function requireReceipt(Expense $expense): void {
+		ExpenseReceiptPolicy::requireReceipt($expense->getFileId(), $expense->getFileOwner());
+		$this->files->get($expense->getFileOwner(), $expense->getFileId());
 	}
 
 	private function docVars(int $personId): array {

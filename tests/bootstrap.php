@@ -22,7 +22,16 @@ if (!interface_exists(\OCP\IL10N::class)) {
 }
 
 if (!class_exists(\OCP\AppFramework\Db\QBMapper::class)) {
-	eval('namespace OCP\\AppFramework\\Db; abstract class QBMapper {} abstract class Entity {}');
+	eval('namespace OCP\\AppFramework\\Db; abstract class QBMapper {}
+	abstract class Entity {
+		protected array $_fieldTypes = [];
+		protected function addType(string $name, string $type): void { $this->_fieldTypes[$name] = $type; }
+		public function __call(string $name, array $args) {
+			if (str_starts_with($name, "set")) { $p = lcfirst(substr($name, 3)); $this->$p = $args[0] ?? null; return; }
+			if (str_starts_with($name, "get")) { $p = lcfirst(substr($name, 3)); return $this->$p ?? null; }
+			throw new \\BadMethodCallException($name);
+		}
+	}');
 }
 
 spl_autoload_register(static function (string $class): void {

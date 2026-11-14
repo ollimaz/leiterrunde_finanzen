@@ -16,6 +16,14 @@ use OCA\Leiterrunde\Db\BaseEntity;
  * @method void setPersonId(int $v)
  * @method string getSubmittedBy()
  * @method void setSubmittedBy(string $v)
+ * @method ?int getEventId()
+ * @method void setEventId(?int $v)
+ * @method ?int getBookId()
+ * @method void setBookId(?int $v)
+ * @method string getPaymentMethod()
+ * @method void setPaymentMethod(string $v)
+ * @method ?int getSourceAccountId()
+ * @method void setSourceAccountId(?int $v)
  * @method string getExpenseDate()
  * @method void setExpenseDate(string $v)
  * @method string getAmount()
@@ -48,6 +56,10 @@ use OCA\Leiterrunde\Db\BaseEntity;
 class Expense extends BaseEntity {
 	protected int $personId = 0;
 	protected string $submittedBy = '';
+	protected ?int $eventId = null;
+	protected ?int $bookId = null;
+	protected string $paymentMethod = 'personal';
+	protected ?int $sourceAccountId = null;
 	protected string $expenseDate = '';
 	protected string $amount = '0';
 	protected ?string $category = null;
@@ -64,7 +76,7 @@ class Expense extends BaseEntity {
 	protected int $createdAt = 0;
 
 	public function __construct() {
-		foreach (['personId', 'fileId', 'decidedAt', 'paidAt', 'transactionId', 'createdAt'] as $p) {
+		foreach (['personId', 'eventId', 'bookId', 'sourceAccountId', 'fileId', 'decidedAt', 'paidAt', 'transactionId', 'createdAt'] as $p) {
 			$this->addType($p, 'integer');
 		}
 	}

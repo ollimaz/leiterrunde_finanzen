@@ -16,6 +16,7 @@ use OCA\LeiterrundeFinanzen\Db\ObligationMapper;
 use OCA\Leiterrunde\Exception\ApiException;
 use OCA\Leiterrunde\Service\AuditService;
 use OCA\Leiterrunde\Service\PermissionService;
+use OCA\LeiterrundeFinanzen\Service\BookService;
 use OCA\LeiterrundeFinanzen\Service\TransactionService;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
@@ -33,6 +34,7 @@ class ObligationsController extends ApiController {
 		private PermissionService $perm,
 		private ObligationMapper $mapper,
 		private TransactionService $txService,
+		private BookService $books,
 		private AuditService $audit,
 	) {
 		parent::__construct(Application::APP_ID, $request, $logger);
@@ -73,10 +75,13 @@ class ObligationsController extends ApiController {
 		?string $due_date = null,
 		?string $reference = null,
 		?int $person_id = null,
+		?int $event_id = null,
+		?string $new_event = null,
 		?string $notes = null,
 	): JSONResponse {
-		return $this->wrap(function () use ($label, $amount_due, $payer_name, $due_date, $reference, $person_id, $notes) {
+		return $this->wrap(function () use ($label, $amount_due, $payer_name, $due_date, $reference, $person_id, $event_id, $new_event, $notes) {
 			$this->perm->require('finance.write');
+			$event_id = $this->books->resolveEvent($event_id !== null && $event_id > 0 ? $event_id : null, $new_event);
 			if ($reference !== null && $reference !== '' && $this->mapper->findByReference($reference) !== null) {
 				throw new ApiException('Reference already taken', 409);
 			}
@@ -87,6 +92,7 @@ class ObligationsController extends ApiController {
 			$o->setDueDate($due_date);
 			$o->setReference($reference);
 			$o->setPersonId($person_id);
+			$o->setEventId($event_id);
 			$o->setNotes($notes);
 			$o->setStatus('open');
 			$o->setCreatedAt(time());
@@ -107,9 +113,10 @@ class ObligationsController extends ApiController {
 		?string $reference = null,
 		?string $status = null,
 		?int $person_id = null,
+		?int $event_id = null,
 		?string $notes = null,
 	): JSONResponse {
-		return $this->wrap(function () use ($id, $label, $amount_due, $payer_name, $due_date, $reference, $status, $person_id, $notes) {
+		return $this->wrap(function () use ($id, $label, $amount_due, $payer_name, $due_date, $reference, $status, $person_id, $event_id, $notes) {
 			$this->perm->require('finance.write');
 			$o = $this->mapper->find($id);
 			$before = $o->jsonSerialize();
@@ -119,6 +126,11 @@ class ObligationsController extends ApiController {
 			if ($due_date !== null) $o->setDueDate($due_date);
 			if ($reference !== null) $o->setReference($reference);
 			if ($person_id !== null) $o->setPersonId($person_id);
+			if (array_key_exists('event_id', $this->request->getParams())) {
+				$event_id = $event_id !== null && $event_id > 0 ? $event_id : null;
+				$this->books->requireEvent($event_id);
+				$o->setEventId($event_id);
+			}
 			if ($notes !== null) $o->setNotes($notes);
 			if ($status !== null) {
 				if (!in_array($status, self::STATUSES, true)) {

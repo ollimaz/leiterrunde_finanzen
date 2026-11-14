@@ -16,7 +16,7 @@ use OCP\EventDispatcher\Event;
 use OCP\EventDispatcher\IEventListener;
 
 class RegisterFinanzenModule implements IEventListener {
-	public function __construct(private FinanzenModule $module) {
+	public function __construct(private FinanzenModule $module, private \OCA\LeiterrundeFinanzen\Service\BookService $books) {
 	}
 
 	public function handle(Event $event): void {
@@ -25,5 +25,6 @@ class RegisterFinanzenModule implements IEventListener {
 		}
 		$event->registerModule($this->module);
 		$event->registerProvider(IObligationProvider::class, $this->module);
+		$event->registerProvider(\OCA\Leiterrunde\Module\IEventAccountingProvider::class, $this->books);
 	}
 }

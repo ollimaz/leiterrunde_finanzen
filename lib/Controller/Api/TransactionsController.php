@@ -18,6 +18,7 @@ use OCA\Leiterrunde\Service\AuditService;
 use OCA\LeiterrundeFinanzen\Service\Import\Camt053Importer;
 use OCA\LeiterrundeFinanzen\Service\Import\CsvImporter;
 use OCA\Leiterrunde\Service\PermissionService;
+use OCA\LeiterrundeFinanzen\Service\BookService;
 use OCA\LeiterrundeFinanzen\Service\TransactionService;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
@@ -33,6 +34,7 @@ class TransactionsController extends ApiController {
 		private TransactionMapper $mapper,
 		private AccountMapper $accountMapper,
 		private TransactionService $service,
+		private BookService $books,
 		private AuditService $audit,
 	) {
 		parent::__construct(Application::APP_ID, $request, $logger);
@@ -100,12 +102,25 @@ class TransactionsController extends ApiController {
 	}
 
 	#[NoAdminRequired]
-	public function assign(int $id, ?int $obligation_id = null): JSONResponse {
-		return $this->wrap(function () use ($id, $obligation_id) {
+	public function assign(int $id, ?int $obligation_id = null, ?int $book_id = null): JSONResponse {
+		return $this->wrap(function () use ($id, $obligation_id, $book_id) {
 			$this->perm->require('finance.write');
 			$tx = $this->mapper->find($id);
+			$bookId = null;
+			$hasBookParam = array_key_exists('book_id', $this->request->getParams());
+			if ($hasBookParam) {
+				$bookId = $book_id !== null && $book_id > 0 ? $book_id : null;
+				if ($bookId !== null) {
+					$tx->setObligationId($obligation_id);
+					$this->books->requireIncomingBook($tx, $bookId);
+				}
+			}
 			$this->service->assign($tx, $obligation_id);
-			$this->audit->diff('transaction', $id, null, ['_action' => 'assigned:' . ($obligation_id ?? 'none')]);
+			if ($hasBookParam) {
+				$tx->setBookId($bookId);
+				$tx = $this->mapper->update($tx);
+			}
+			$this->audit->diff('transaction', $id, null, ['_action' => 'assigned:' . ($obligation_id ?? 'none') . ', book:' . ($bookId ?? 'none')]);
 			return $tx->jsonSerialize();
 		});
 	}

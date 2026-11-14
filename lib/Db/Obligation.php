@@ -28,6 +28,8 @@ use OCA\Leiterrunde\Db\BaseEntity;
  * @method void setPersonId(?int $v)
  * @method ?int getRegistrationId()
  * @method void setRegistrationId(?int $v)
+ * @method ?int getEventId()
+ * @method void setEventId(?int $v)
  * @method ?string getNotes()
  * @method void setNotes(?string $v)
  * @method int getCreatedAt()
@@ -44,6 +46,7 @@ class Obligation extends BaseEntity {
 	protected string $status = 'open';
 	protected ?int $personId = null;
 	protected ?int $registrationId = null;
+	protected ?int $eventId = null;
 	protected ?string $notes = null;
 	protected int $createdAt = 0;
 	protected int $updatedAt = 0;
@@ -51,6 +54,7 @@ class Obligation extends BaseEntity {
 	public function __construct() {
 		$this->addType('personId', 'integer');
 		$this->addType('registrationId', 'integer');
+		$this->addType('eventId', 'integer');
 		$this->addType('createdAt', 'integer');
 		$this->addType('updatedAt', 'integer');
 	}

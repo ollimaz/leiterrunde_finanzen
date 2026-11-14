@@ -28,6 +28,8 @@ use OCA\Leiterrunde\Db\BaseEntity;
  * @method void setDedupeHash(string $v)
  * @method ?int getObligationId()
  * @method void setObligationId(?int $v)
+ * @method ?int getBookId()
+ * @method void setBookId(?int $v)
  * @method ?string getRaw()
  * @method void setRaw(?string $v)
  * @method int getCreatedAt()
@@ -42,12 +44,14 @@ class Transaction extends BaseEntity {
 	protected string $source = 'manual';
 	protected string $dedupeHash = '';
 	protected ?int $obligationId = null;
+	protected ?int $bookId = null;
 	protected ?string $raw = null;
 	protected int $createdAt = 0;
 
 	public function __construct() {
 		$this->addType('accountId', 'integer');
 		$this->addType('obligationId', 'integer');
+		$this->addType('bookId', 'integer');
 		$this->addType('createdAt', 'integer');
 	}
 }
