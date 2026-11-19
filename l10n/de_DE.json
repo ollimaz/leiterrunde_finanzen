@@ -185,7 +185,13 @@
         "Goes on the bank transfer for automatic matching": "Steht auf der Überweisung für die automatische Zuordnung",
         "Already received": "Bereits erhalten",
         "Please enter a label and an amount": "Bitte Bezeichnung und Betrag eingeben",
-        "No incoming payments.": "Keine Zahlungseingänge."
+        "No incoming payments.": "Keine Zahlungseingänge.",
+        "Actions": "Aktionen",
+        "All": "Alle",
+        "Search expenses …": "Ausgaben suchen …",
+        "Search payments …": "Zahlungen suchen …",
+        "Search transactions …": "Transaktionen suchen …",
+        "Unassigned": "Nicht zugeordnet"
     },
     "pluralForm": "nplurals=2; plural=(n != 1);"
 }

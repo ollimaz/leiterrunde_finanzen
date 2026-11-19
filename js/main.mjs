@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: 2026 Leiterrunde
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-const { mountApp, h, badge, toast, formatDate, formatMoney, put, lrPageHeader, field, checkField, formActions, emptyState } = window.LeiterrundeUI;
+const { mountApp, h, badge, toast, formatDate, formatMoney, put, lrPageHeader, field, checkField, formActions, emptyState, listView, persistForm, menuButton, BADGE_LABELS } = window.LeiterrundeUI;
 const { t: _t, n: _n } = window.LeiterrundeUI.l10n('leiterrunde_finanzen');
 
 const APP = 'leiterrunde_finanzen';
@@ -85,20 +85,32 @@ async function viewUmsaetze(v, ME, { api }) {
 	const opts = await api('/books/options').catch(() => ({ books: [] }));
 	const open = obligations.filter(o => o.status === 'open' || o.status === 'partial');
 	const canWrite = ME.caps['finance.write'];
+	const lv = listView({
+		scope: 'umsaetze',
+		search: { placeholder: _t('Search transactions …'), text: t => [t.counterparty, t.purpose].filter(Boolean).join(' ') },
+		filters: [{ key: 'assigned', label: _t('Assignment'), options: [{ value: '', label: _t('All') }, { value: 'open', label: _t('Unassigned') }, { value: 'done', label: _t('Assigned') }],
+			apply: (t, val) => val === 'open' ? !t.obligation_id : val === 'done' ? !!t.obligation_id : true }],
+		sorts: [
+			{ key: 'date', label: _t('Date'), value: t => t.booking_date || '', dirs: [-1, 1] },
+			{ key: 'amount', label: _t('Amount'), value: t => +t.amount, dirs: [-1, 1] },
+			{ key: 'cp', label: _t('Counterparty'), value: t => t.counterparty || '' },
+		],
+		headers: [_t('Date'), _t('Amount'), _t('Counterparty'), _t('Purpose'), _t('Assignment'), _t('Book'), canWrite ? '' : null].filter(h => h !== null),
+		row: (t) => h('tr', {},
+			h('td', {}, formatDate(t.booking_date)), h('td', { class: 'num' }, formatMoney(t.amount)),
+			h('td', {}, t.counterparty || ''), h('td', {}, t.purpose || ''),
+			h('td', {}, t.obligation_id ? _t('Assigned') + ' #' + t.obligation_id : assignSelect(t, open, api, () => viewUmsaetze(v, ME, { api }))),
+			h('td', {}, canWrite && +t.amount > 0 ? bookSelect(t, opts.books, api, () => viewUmsaetze(v, ME, { api })) : '–'),
+			canWrite ? h('td', { class: 'lr-actions' }, h('button', { class: 'lr-btn quiet', onclick: async () => {
+				if (!confirm(_t('Delete this transaction?'))) return;
+				try { await api('/transactions/' + t.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewUmsaetze(v, ME, { api }); }
+				catch (e) { toast(e.message); }
+			} }, _t('Delete'))) : null),
+		empty: _t('No transactions.'),
+	});
+	lv.setRows(rows);
 	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Bank transactions'), lede: _n('%n transaction', '%n transactions', rows.length) + ', ' + _n('%n unassigned', '%n unassigned', rows.filter(t => !t.obligation_id).length) + ' – ' + _t('imported bank movements, assign them to incoming payments or books.') }),
-		rows.length ? h('table', { class: 'lr-table' },
-			h('thead', {}, h('tr', {}, h('th', {}, _t('Date')), h('th', {}, _t('Amount')), h('th', {}, _t('Counterparty')), h('th', {}, _t('Purpose')), h('th', {}, _t('Assignment')), h('th', {}, _t('Book')), canWrite ? h('th', {}, '') : null)),
-			h('tbody', {}, ...rows.map(t => h('tr', {},
-				h('td', {}, formatDate(t.booking_date)), h('td', { class: 'num' }, formatMoney(t.amount)),
-				h('td', {}, t.counterparty || ''), h('td', {}, t.purpose || ''),
-				h('td', {}, t.obligation_id ? _t('Assigned') + ' #' + t.obligation_id : assignSelect(t, open, api, () => viewUmsaetze(v, ME, { api }))),
-				h('td', {}, canWrite && +t.amount > 0 ? bookSelect(t, opts.books, api, () => viewUmsaetze(v, ME, { api })) : '–'),
-				canWrite ? h('td', { class: 'lr-actions' }, h('button', { class: 'lr-btn quiet', onclick: async () => {
-					if (!confirm(_t('Delete this transaction?'))) return;
-					try { await api('/transactions/' + t.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewUmsaetze(v, ME, { api }); }
-					catch (e) { toast(e.message); }
-				} }, _t('Delete'))) : null))))
-			: emptyState(_t('No transactions.')));
+		lv.el);
 }
 
 async function viewZahlungen(v, ME, { api }) {
@@ -106,23 +118,38 @@ async function viewZahlungen(v, ME, { api }) {
 	const canWrite = ME.caps['finance.write'];
 	const opts = await api('/books/options').catch(() => ({ events: [] }));
 	const eventName = id => { const e = opts.events.find(x => x.id === id); return e ? e.title : (id ? '#' + id : ''); };
+	const lv = listView({
+		scope: 'zahlungen',
+		search: { placeholder: _t('Search payments …'), text: o => [o.label, o.payer_name, o.reference].filter(Boolean).join(' ') },
+		filters: [
+			{ key: 'status', label: _t('Status'), options: [{ value: '', label: _t('All') }, ...['open', 'partial', 'paid', 'cancelled'].map(s => ({ value: s, label: BADGE_LABELS[s] || s }))],
+				apply: (o, val) => o.status === val },
+		],
+		sorts: [
+			{ key: 'label', label: _t('Label'), value: o => o.label || '' },
+			{ key: 'due', label: _t('Due'), value: o => o.due_date || '9999' },
+			{ key: 'amount', label: _t('Amount'), value: o => +o.amount_due, dirs: [-1, 1] },
+		],
+		headers: [_t('Label'), _t('Payer'), _t('Amount'), _t('Open'), _t('Due'), _t('Reference'), _t('Event'), _t('Status'), canWrite ? '' : null].filter(Boolean),
+		row: (o) => h('tr', {},
+			h('td', {}, o.label), h('td', {}, o.payer_name || ''),
+			h('td', {}, formatMoney(o.amount_due)), h('td', {}, o.remaining !== undefined ? formatMoney(o.remaining) : '–'),
+			h('td', {}, formatDate(o.due_date) || ''), h('td', {}, o.reference || ''), h('td', {}, eventName(o.event_id)), h('td', {}, badge(o.status)),
+			canWrite ? h('td', { class: 'lr-actions' }, menuButton(_t('Actions'), [
+				{ label: _t('Edit'), onclick: () => obligationForm(v, ME, { api }, o, opts.events) },
+				{ label: _t('Delete'), danger: true, onclick: async () => {
+					if (!confirm(_t('Delete payment "{label}"?', { label: o.label }))) return;
+					try { await api('/obligations/' + o.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewZahlungen(v, ME, { api }); }
+					catch (e) { toast(e.message); }
+				} },
+			])) : null),
+		empty: _t('No incoming payments.'),
+	});
+	lv.setRows(rows);
 	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Incoming payments'),
 			lede: _t('Money the group still expects. Incoming bank transfers are matched and marked paid automatically.'),
 			actions: canWrite ? [h('button', { class: 'lr-btn', onclick: () => { location.hash = '#/erfassen/eingang'; } }, _t('New entry'))] : [] }),
-		rows.length ? h('table', { class: 'lr-table' },
-			h('thead', {}, h('tr', {}, h('th', {}, _t('Label')), h('th', {}, _t('Payer')), h('th', {}, _t('Amount')), h('th', {}, _t('Open')), h('th', {}, _t('Due')), h('th', {}, _t('Reference')), h('th', {}, _t('Event')), h('th', {}, _t('Status')), canWrite ? h('th', {}, '') : null)),
-			h('tbody', {}, ...rows.map(o => h('tr', {},
-				h('td', {}, o.label), h('td', {}, o.payer_name || ''),
-				h('td', {}, formatMoney(o.amount_due)), h('td', {}, o.remaining !== undefined ? formatMoney(o.remaining) : '–'),
-				h('td', {}, formatDate(o.due_date) || ''), h('td', {}, o.reference || ''), h('td', {}, eventName(o.event_id)), h('td', {}, badge(o.status)),
-				canWrite ? h('td', { class: 'lr-actions' },
-					h('button', { class: 'lr-btn secondary', onclick: () => obligationForm(v, ME, { api }, o, opts.events) }, _t('Edit')),
-					h('button', { class: 'lr-btn quiet', onclick: async () => {
-						if (!confirm(_t('Delete payment "{label}"?', { label: o.label }))) return;
-						try { await api('/obligations/' + o.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewZahlungen(v, ME, { api }); }
-						catch (e) { toast(e.message); }
-					} }, _t('Delete'))) : null))))
-			: emptyState(_t('No incoming payments.')));
+		lv.el);
 }
 
 function obligationForm(v, ME, { api }, o, events = []) {
@@ -165,27 +192,42 @@ async function viewAuslagen(v, ME, { api, coreApi }) {
 		try { await api('/expenses/' + id + '/' + action, { method: 'POST', json: {} }); viewAuslagen(v, ME, { api, coreApi }); }
 		catch (e) { toast(e.message); }
 	};
+	const lv = listView({
+		scope: 'auslagen',
+		search: { placeholder: _t('Search expenses …'), text: e => [name(e.person_id), e.category, e.description].filter(Boolean).join(' ') },
+		filters: [
+			{ key: 'status', label: _t('Status'), options: [{ value: '', label: _t('All') }, ...['pending', 'approved', 'rejected', 'paid'].map(s => ({ value: s, label: BADGE_LABELS[s] || s }))],
+				apply: (e, val) => e.status === val },
+		],
+		sorts: [
+			{ key: 'date', label: _t('Date'), value: e => e.expense_date || '', dirs: [-1, 1] },
+			{ key: 'person', label: _t('Person'), value: e => name(e.person_id) },
+			{ key: 'amount', label: _t('Amount'), value: e => +e.amount, dirs: [-1, 1] },
+		],
+		headers: [_t('Person'), _t('Date'), _t('Amount'), _t('Category'), _t('Event'), _t('Method'), _t('Status'), _t('Receipt'), showActions ? _t('Action') : null].filter(Boolean),
+		row: (e) => h('tr', {},
+			h('td', {}, name(e.person_id)), h('td', {}, formatDate(e.expense_date)), h('td', { class: 'num' }, formatMoney(e.amount)),
+			h('td', {}, e.category || ''), h('td', {}, eventName(e.event_id)), h('td', {}, showMethod(e.payment_method)), h('td', {}, badge(e.status)),
+			h('td', {}, e.file_id ? h('a', { href: OC.generateUrl('/apps/' + APP + '/api/expenses/' + e.id + '/file'), target: '_blank' }, e.file_name || _t('Receipt'))
+				: (canMutate(e) && e.status === 'pending' ? receiptUpload(e, api, () => viewAuslagen(v, ME, { api, coreApi })) : '–')),
+			showActions ? h('td', { class: 'lr-actions' }, menuButton(_t('Actions'), [
+				canDecide && e.status === 'pending' ? { label: _t('Approve'), onclick: () => act(e.id, 'approve') } : null,
+				canDecide && e.status === 'pending' ? { label: _t('Reject'), onclick: () => act(e.id, 'reject') } : null,
+				canPay && e.status === 'approved' ? { label: _t('Pay'), onclick: () => act(e.id, 'pay') } : null,
+				canDecide && (e.status === 'approved' || e.status === 'rejected') ? { label: _t('Reopen'), onclick: () => act(e.id, 'reopen') } : null,
+				canMutate(e) ? { label: _t('Edit'), onclick: () => expenseForm(v, ME, { api, coreApi }, e, cats) } : null,
+				canMutate(e) ? { label: _t('Delete'), danger: true, onclick: async () => {
+					if (!confirm(_t('Delete this expense?'))) return;
+					try { await api('/expenses/' + e.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewAuslagen(v, ME, { api, coreApi }); }
+					catch (er) { toast(er.message); }
+				} } : null,
+			])) : null),
+		empty: _t('No expenses.'),
+	});
+	lv.setRows(rows);
 	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('Expenses'),
 			actions: [h('button', { class: 'lr-btn', onclick: () => { location.hash = '#/erfassen/auslage'; } }, _t('New entry'))] }),
-		rows.length ? h('table', { class: 'lr-table' },
-			h('thead', {}, h('tr', {}, h('th', {}, _t('Person')), h('th', {}, _t('Date')), h('th', {}, _t('Amount')), h('th', {}, _t('Category')), h('th', {}, _t('Event')), h('th', {}, _t('Method')), h('th', {}, _t('Status')), h('th', {}, _t('Receipt')), showActions ? h('th', {}, _t('Action')) : null)),
-			h('tbody', {}, ...rows.map(e => h('tr', {},
-				h('td', {}, name(e.person_id)), h('td', {}, formatDate(e.expense_date)), h('td', { class: 'num' }, formatMoney(e.amount)),
-				h('td', {}, e.category || ''), h('td', {}, eventName(e.event_id)), h('td', {}, showMethod(e.payment_method)), h('td', {}, badge(e.status)),
-				h('td', {}, e.file_id ? h('a', { href: OC.generateUrl('/apps/' + APP + '/api/expenses/' + e.id + '/file'), target: '_blank' }, e.file_name || _t('Receipt'))
-					: (canMutate(e) && e.status === 'pending' ? receiptUpload(e, api, () => viewAuslagen(v, ME, { api, coreApi })) : '–')),
-				showActions ? h('td', { class: 'lr-actions' },
-					canDecide && e.status === 'pending' ? h('button', { class: 'lr-btn', onclick: () => act(e.id, 'approve') }, _t('Approve')) : null,
-					canDecide && e.status === 'pending' ? h('button', { class: 'lr-btn quiet', onclick: () => act(e.id, 'reject') }, _t('Reject')) : null,
-					canPay && e.status === 'approved' ? h('button', { class: 'lr-btn', onclick: () => act(e.id, 'pay') }, _t('Pay')) : null,
-					canDecide && (e.status === 'approved' || e.status === 'rejected') ? h('button', { class: 'lr-btn secondary', onclick: () => act(e.id, 'reopen') }, _t('Reopen')) : null,
-					canMutate(e) ? h('button', { class: 'lr-btn secondary', onclick: () => expenseForm(v, ME, { api, coreApi }, e, cats) }, _t('Edit')) : null,
-					canMutate(e) ? h('button', { class: 'lr-btn quiet', onclick: async () => {
-						if (!confirm(_t('Delete this expense?'))) return;
-						try { await api('/expenses/' + e.id, { method: 'DELETE' }); toast(_t('Deleted'), false); viewAuslagen(v, ME, { api, coreApi }); }
-						catch (er) { toast(er.message); }
-					} }, _t('Delete')) : null) : null))))
-			: emptyState(_t('No expenses.')));
+		lv.el);
 }
 
 function receiptUpload(e, api, reload) {
@@ -332,7 +374,7 @@ function accountForm(v, ME, { api }, a, parsers) {
 async function viewErfassen(v, ME, { api, coreApi }) {
 	const canWrite = ME.caps['finance.write'];
 	const kind = location.hash.split('/')[2] === 'eingang' && canWrite ? 'eingang' : 'auslage';
-	const typeSel = h('select', { 'aria-label': _t('Type'), onchange: (e) => { location.hash = '#/erfassen/' + e.target.value; } },
+	const typeSel = h('select', { 'aria-label': _t('Type'), 'data-nodraft': '1', onchange: (e) => { location.hash = '#/erfassen/' + e.target.value; } },
 		h('option', { value: 'auslage', selected: kind === 'auslage' }, _t('Outgoing – expense / advance')),
 		canWrite ? h('option', { value: 'eingang', selected: kind === 'eingang' }, _t('Incoming – someone still has to pay')) : null);
 	if (kind === 'eingang') return erfassenEingang(v, ME, { api, coreApi }, typeSel);
@@ -376,18 +418,18 @@ async function erfassenAuslage(v, ME, { api, coreApi }, typeSel) {
 		fd.append('payment_method', pvv.payment_method); fd.append('source_account_id', pvv.source_account_id);
 		if (pvv.new_event) fd.append('new_event', pvv.new_event);
 		if (file.files[0]) fd.append('file', file.files[0]);
-		try { await api('/expenses', { method: 'POST', body: fd }); toast(_t('Submitted'), false); location.hash = '#/auslagen'; }
+		try { await api('/expenses', { method: 'POST', body: fd }); draft.clear(); toast(_t('Submitted'), false); location.hash = '#/auslagen'; }
 		catch (e) { toast(e.message); }
 	} }, _t('Submit'));
-	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('New entry') }),
-		h('div', { class: 'lr-form lr-formgrid' },
-			field(_t('Type'), typeSel, 4),
-			canWrite ? field(_t('Person'), window.LeiterrundeUI.personPicker({ persons, onChange: (id) => { pid = id; } }), 4) : null,
-			field(_t('Date'), date, 4), field(_t('Amount'), amount, 4),
-			field(_t('Category'), cat, 4), field(_t('Description'), desc, 8),
-			field(_t('Receipt'), file, 6, _t('Needed for approval – PDF or photo')),
-			formActions(submit)),
-		extra);
+	const form = h('div', { class: 'lr-form lr-formgrid' },
+		field(_t('Type'), typeSel, 4),
+		canWrite ? field(_t('Person'), window.LeiterrundeUI.personPicker({ persons, onChange: (id) => { pid = id; } }), 4) : null,
+		field(_t('Date'), date, 4), field(_t('Amount'), amount, 4),
+		field(_t('Category'), cat, 4), field(_t('Description'), desc, 8),
+		field(_t('Receipt'), file, 6, _t('Needed for approval – PDF or photo')),
+		formActions(submit));
+	const draft = persistForm(form, APP + '.erfassen-auslage');
+	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('New entry') }), form, extra);
 }
 
 async function erfassenEingang(v, ME, { api, coreApi }, typeSel) {
@@ -422,19 +464,20 @@ async function erfassenEingang(v, ME, { api, coreApi }, typeSel) {
 				try { await api('/obligations/' + o.id, { method: 'PUT', json: { status: 'paid' } }); }
 				catch (er) { toast(er.message); }
 			}
-			toast(_t('Recorded'), false); location.hash = '#/zahlungen';
+			draft.clear(); toast(_t('Recorded'), false); location.hash = '#/zahlungen';
 		} catch (e) { toast(e.message); }
 	} }, _t('Submit'));
+	const form = h('div', { class: 'lr-form lr-formgrid' },
+		field(_t('Type'), typeSel, 4),
+		field(_t('Label'), label, 4), field(_t('Amount'), amount, 2),
+		field(_t('Payer'), payerCtl, 4), field(_t('Due'), due, 4),
+		field(_t('Reference'), ref, 4, _t('Goes on the bank transfer for automatic matching')),
+		field(_t('Event'), eventSel, 4), field(_t('New event'), newEvent, 4),
+		h('div', { class: 'lr-f col-12' }, checkField(_t('Already received'), gotIt)),
+		formActions(submit));
+	const draft = persistForm(form, APP + '.erfassen-eingang');
 	put(v, lrPageHeader({ kicker: _t('Leiterrunde · Finances'), title: _t('New entry'),
-			lede: _t('For money the group still expects – e.g. camp fees. Incoming bank payments are matched automatically.') }),
-		h('div', { class: 'lr-form lr-formgrid' },
-			field(_t('Type'), typeSel, 4),
-			field(_t('Label'), label, 4), field(_t('Amount'), amount, 2),
-			field(_t('Payer'), payerCtl, 4), field(_t('Due'), due, 4),
-			field(_t('Reference'), ref, 4, _t('Goes on the bank transfer for automatic matching')),
-			field(_t('Event'), eventSel, 4), field(_t('New event'), newEvent, 4),
-			h('div', { class: 'lr-f col-12' }, checkField(_t('Already received'), gotIt)),
-			formActions(submit)));
+			lede: _t('For money the group still expects – e.g. camp fees. Incoming bank payments are matched automatically.') }), form);
 }
 
 mountApp({
