@@ -20,6 +20,7 @@
 	<repository>https://github.com/ollimaz/leiterrunde_finanzen</repository>
 	<dependencies>
 		<nextcloud min-version="29" max-version="36"/>
+		<app min-version="0.0.6">leiterrunde</app>
 	</dependencies>
 	<background-jobs>
 		<job>OCA\LeiterrundeFinanzen\BackgroundJob\ObligationCheckJob</job>

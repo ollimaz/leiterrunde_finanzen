@@ -10,10 +10,12 @@ declare(strict_types=1);
 namespace OCA\LeiterrundeFinanzen\AppInfo;
 
 use OCA\LeiterrundeFinanzen\Listener\RegisterFinanzenModule;
+use OCP\App\IAppManager;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
+use OCP\Server;
 
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'leiterrunde_finanzen';
@@ -28,7 +30,11 @@ class Application extends App implements IBootstrap {
 			'OCA\Leiterrunde\Module\RegisterModulesEvent',
 			RegisterFinanzenModule::class
 		);
-		$context->registerDashboardWidget(\OCA\LeiterrundeFinanzen\Dashboard\AuslagenWidget::class);
+		// Widgets brauchen Core-Klassen — bei deaktivierter Core-App würden
+		// sie fremde Seiten (z.B. das Dashboard) zum Fehler machen.
+		if (Server::get(IAppManager::class)->isEnabledForAnyone(self::CORE_APP_ID)) {
+			$context->registerDashboardWidget(\OCA\LeiterrundeFinanzen\Dashboard\AuslagenWidget::class);
+		}
 	}
 
 	public function boot(IBootContext $context): void {

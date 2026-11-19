@@ -191,7 +191,8 @@
         "Search expenses …": "Ausgaben suchen …",
         "Search payments …": "Zahlungen suchen …",
         "Search transactions …": "Transaktionen suchen …",
-        "Unassigned": "Nicht zugeordnet"
+        "Unassigned": "Nicht zugeordnet",
+        "The “Leiterrunde” app must be enabled.": "Die „Leiterrunde“-App muss aktiviert sein."
     },
     "pluralForm": "nplurals=2; plural=(n != 1);"
 }
