@@ -22,7 +22,7 @@ Full finance administration for the group:
 • Dashboard widget for open expenses
 
 Requires the Leiterrunde app for persons, roles and permissions.]]></description>
-	<version>0.0.5</version>
+	<version>0.0.6</version>
 	<licence>agpl</licence>
 	<author>Leiterrunde</author>
 	<namespace>LeiterrundeFinanzen</namespace>
