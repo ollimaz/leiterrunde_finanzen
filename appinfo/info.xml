@@ -10,7 +10,18 @@
 	<name lang="de">Finanzen</name>
 	<summary>Accounts, payments and expenses for the leader team</summary>
 	<summary lang="de">Konten, Zahlungen und Auslagen für die Leiterrunde</summary>
-	<description><![CDATA[Finances module of the Leiterrunde suite – requires the Leiterrunde app. Bank accounts with CSV/camt.053 and IMAP import, payment obligations, expense claims and transaction matching.]]></description>
+	<description><![CDATA[Finances module of the Leiterrunde suite – requires the Leiterrunde app.
+
+Full finance administration for the group:
+
+• Bank accounts with transaction import (CSV, camt.053) and automatic IMAP mailbox polling
+• Books and categories to organize the ledger
+• Payment obligations with due dates and payment tracking
+• Expense claims (Auslagen) with approve/reject workflow, receipt files and payout status
+• Transaction matching to persons, books and obligations
+• Dashboard widget for open expenses
+
+Requires the Leiterrunde app for persons, roles and permissions.]]></description>
 	<version>0.0.5</version>
 	<licence>agpl</licence>
 	<author>Leiterrunde</author>
